@@ -1,0 +1,67 @@
+# Example: AQEF PR quality gate as a blocking GitHub Actions check.
+#
+# Copy into .github/workflows/ of the project under test and replace the
+# "Collect quality metrics" step with your real metric producers (coverage,
+# test results, scanners). The gate fails closed: any blocking metric your
+# pipeline forgets to emit fails the check — that is by design.
+
+name: quality-gate
+
+on:
+  pull_request:
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install AQEF
+        run: pip install pyyaml && pip install -e ./aqef-framework  # path to this framework
+
+      - name: Collect quality metrics
+        # Project-specific: produce build/metrics.json with the metric keys your
+        # gate's rules require (line_coverage_pct, tests_failed, ...). Example:
+        #   pytest --cov --cov-report=json -q
+        #   python scripts/metrics_to_json.py --out build/metrics.json
+        run: |
+          mkdir -p build
+          python scripts/collect_metrics.py --out build/metrics.json
+
+      - name: Restore baseline from target branch
+        # Optional but recommended (eval-driven practice): compare against the
+        # last stored snapshot of the target branch so a metric that still
+        # clears its threshold but slides toward it is caught as a regression.
+        uses: actions/cache/restore@v4
+        with:
+          path: build/baseline-metrics.json
+          key: aqef-baseline-${{ github.base_ref }}
+
+      - name: Evaluate PR quality gate (blocking)
+        run: |
+          python -m aqef gate pr-gate \
+            --config framework.yaml \
+            --metrics build/metrics.json \
+            $( [ -f build/baseline-metrics.json ] && echo "--baseline build/baseline-metrics.json --fail-on-regression" ) \
+            --store --history .aqef/history.jsonl
+
+      - name: Render quality report
+        if: always()  # the report matters most when the gate fails
+        run: |
+          python -m aqef report pr-quality-gate \
+            --config framework.yaml \
+            --metrics build/metrics.json \
+            --subject "PR #${{ github.event.pull_request.number }}" \
+            --format html \
+            --out build/quality-report.html || true
+
+      - name: Upload quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report
+          path: build/quality-report.html

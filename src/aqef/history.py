@@ -14,13 +14,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
+from aqef.compare import assess_change
+from aqef.config import Rule
 from aqef.gates import GateResult
 from aqef.report import gate_result_to_dict
 
 DEFAULT_HISTORY = str(Path(".aqef") / "history.jsonl")
-
-# Which way is "better" for a metric, derived from its rule operator.
-_BETTER = {">=": "up", ">": "up", "<=": "down", "<": "down"}
 
 
 @dataclass(frozen=True)
@@ -87,7 +86,15 @@ def compute_trend(runs: list[RunRecord]) -> dict:
         verdicts[run.verdict] = verdicts.get(run.verdict, 0) + 1
 
     # Direction semantics come from the most recent run's rule definitions.
-    better = {rule["metric"]: _BETTER.get(rule["operator"]) for rule in runs[-1].rules}
+    rules_by_metric = {
+        rule["metric"]: Rule(
+            metric=rule["metric"],
+            operator=rule["operator"],
+            threshold=float(rule["threshold"]),
+            severity=rule["severity"],
+        )
+        for rule in runs[-1].rules
+    }
 
     # Ordered unique metric keys across all runs.
     keys: list[str] = []
@@ -101,17 +108,13 @@ def compute_trend(runs: list[RunRecord]) -> dict:
         series = [run.metrics[key] for run in runs if key in run.metrics]
         first, last = series[0], series[-1]
         delta = last - first
-        direction = better.get(key)
+        rule = rules_by_metric.get(key)
         if len(series) < 2:
             assessment = "single data point"
-        elif delta == 0:
-            assessment = "flat"
-        elif direction is None:
-            assessment = "changed"  # no rule direction (== / != / unruled metric)
-        elif (delta > 0) == (direction == "up"):
-            assessment = "improving"
+        elif rule is None:
+            assessment = "flat" if delta == 0 else "changed"  # metric has no rule
         else:
-            assessment = "worsening"
+            assessment = assess_change(rule, first, last)
         metrics[key] = {
             "observations": len(series),
             "first": first,

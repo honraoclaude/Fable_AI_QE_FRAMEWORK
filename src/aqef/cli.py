@@ -5,6 +5,7 @@
   python -m aqef list-workflows --config <framework.yaml>
   python -m aqef gate <gate-name> --config <framework.yaml> --metrics <metrics.json>
                      [--format text|json] [--store] [--history <file>]
+                     [--baseline <metrics.json>] [--fail-on-regression]
   python -m aqef report <gate-or-workflow> --config <framework.yaml>
                      --metrics <metrics.json> [--format md|html] [--out report.md]
                      [--subject "PR #42"] [--store] [--history <file>]
@@ -21,6 +22,12 @@ import json
 import sys
 from pathlib import Path
 
+from aqef.compare import (
+    compare_metrics,
+    delta_to_dict,
+    format_comparison,
+    regressions,
+)
 from aqef.config import ConfigError, load_config
 from aqef.gates import evaluate_gate
 from aqef.history import (
@@ -105,14 +112,43 @@ def cmd_gate(args: argparse.Namespace) -> int:
     if isinstance(metrics, int):
         return metrics
 
+    if args.fail_on_regression and not args.baseline:
+        print("error: --fail-on-regression requires --baseline", file=sys.stderr)
+        return 2
+
     result = evaluate_gate(config.gates[args.gate], metrics)
     if args.store:
         record = append_run(args.history, result, metrics)
         print(f"run stored: {args.history} @ {record.timestamp}", file=sys.stderr)
+
+    deltas = None
+    regressed = []
+    if args.baseline:
+        baseline = _load_metrics(args.baseline)
+        if isinstance(baseline, int):
+            return baseline
+        deltas = compare_metrics(config.gates[args.gate], metrics, baseline)
+        regressed = regressions(deltas)
+
     if args.format == "json":
-        print(json.dumps(gate_result_to_dict(result), indent=2))
+        payload = gate_result_to_dict(result)
+        if deltas is not None:
+            payload["baseline"] = {
+                "deltas": [delta_to_dict(d) for d in deltas],
+                "regressions": [d.metric for d in regressed],
+            }
+        print(json.dumps(payload, indent=2))
     else:
         print(result.rationale())
+        if deltas is not None:
+            print(format_comparison(deltas))
+
+    if args.fail_on_regression and regressed:
+        names = ", ".join(d.metric for d in regressed)
+        print(
+            f"BASELINE REGRESSION (--fail-on-regression): {names}", file=sys.stderr
+        )
+        return 1
     return 1 if result.failed else 0
 
 
@@ -211,6 +247,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_gate.add_argument(
         "--format", choices=("text", "json"), default="text",
         help="output format (default: text)",
+    )
+    p_gate.add_argument(
+        "--baseline",
+        help="baseline metrics JSON; reports per-metric movement vs. this snapshot",
+    )
+    p_gate.add_argument(
+        "--fail-on-regression", action="store_true",
+        help="exit 1 if any blocking/warning metric worsened vs. the baseline, "
+        "even when all absolute thresholds pass",
     )
     _add_store_args(p_gate)
     p_gate.set_defaults(func=cmd_gate)

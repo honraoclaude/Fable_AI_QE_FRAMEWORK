@@ -52,7 +52,7 @@ dropped straight into a CI pipeline as a blocking step.
 
 ## Reporting
 
-Four layers, from machine-readable to human-judgment:
+Five layers, from machine-readable to human-judgment:
 
 1. **JSON** — `gate --format json` emits the full verdict with per-rule evidence for
    dashboards, PR comment bots, and automation.
@@ -62,7 +62,12 @@ Four layers, from machine-readable to human-judgment:
    policy applied. `--format html` produces a standalone styled page
    ([examples/sample-report.html](examples/sample-report.html)); see
    [examples/sample-report.md](examples/sample-report.md) for a generated FAIL report.
-3. **History & trends** — add `--store` to `gate` or `report` to append the run to an
+3. **Baseline regression detection** — `gate --baseline last-good.json
+   --fail-on-regression` blocks when any blocking/warning metric *worsened* vs. the
+   baseline, even if absolute thresholds still pass. Direction follows each rule
+   (`==` rules use distance-to-target). CI wiring example:
+   [examples/github-actions-quality-gate.yml](examples/github-actions-quality-gate.yml).
+4. **History & trends** — add `--store` to `gate` or `report` to append the run to an
    append-only JSONL history file (default `.aqef/history.jsonl`). Then:
 
    ```bash
@@ -73,7 +78,7 @@ Four layers, from machine-readable to human-judgment:
    Trends assess each metric against its rule's direction (coverage rising =
    improving; latency rising = worsening) and report verdict distribution over time.
    History records are immutable — past runs are evidence, never edited.
-4. **Human sections** — residual risk and the checkpoint decision are emitted as
+5. **Human sections** — residual risk and the checkpoint decision are emitted as
    explicit placeholders. The renderer never fabricates content a human is supposed
    to supply; that judgment is recorded by the human quality owner.
 

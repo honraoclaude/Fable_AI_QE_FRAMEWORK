@@ -62,6 +62,31 @@ The shipped numbers are defensible defaults, not truths. Tune them with this pro
    loosen a blocking threshold without a written, dated rationale.
 4. **Review quarterly.** Thresholds drift out of relevance as the product changes.
 
+## Baseline comparison (regression vs. last known good)
+
+Absolute thresholds are necessary but not sufficient: a metric can clear its threshold
+while sliding toward it. Eval-driven practice (2026 consensus) treats regression below
+an established baseline as a blocking signal in its own right.
+
+```bash
+python -m aqef gate pr-gate --config framework.yaml \
+  --metrics current.json --baseline last-good.json --fail-on-regression
+```
+
+- Every gate rule's metric is compared against the baseline snapshot, with direction
+  taken from the rule: `>=`/`>` means higher is better, `<=`/`<` lower is better, and
+  `==`/`!=` use **distance to target** (e.g. `tests_failed` moving 2 → 0 toward the
+  `== 0` target is improving).
+- `--fail-on-regression` exits 1 when any **blocking or warning** metric worsened —
+  even if every absolute threshold still passes. `info`-severity movement is reported,
+  never blocking.
+- The comparison appears in text output and in the JSON payload
+  (`baseline.deltas`, `baseline.regressions`); metrics absent from either snapshot are
+  reported as not comparable, never inferred.
+- Typical CI wiring: cache the target branch's last metrics snapshot and compare each
+  PR against it — see
+  [examples/github-actions-quality-gate.yml](../examples/github-actions-quality-gate.yml).
+
 ## Adding a gate
 
 1. Define it in `framework.yaml` under `gates:`.
