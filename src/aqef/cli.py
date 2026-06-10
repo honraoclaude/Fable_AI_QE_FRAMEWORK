@@ -4,9 +4,12 @@
   python -m aqef list-agents --config <framework.yaml>
   python -m aqef list-workflows --config <framework.yaml>
   python -m aqef gate <gate-name> --config <framework.yaml> --metrics <metrics.json>
-                     [--format text|json]
+                     [--format text|json] [--store] [--history <file>]
   python -m aqef report <gate-or-workflow> --config <framework.yaml>
-                     --metrics <metrics.json> [--out report.md] [--subject "PR #42"]
+                     --metrics <metrics.json> [--format md|html] [--out report.md]
+                     [--subject "PR #42"] [--store] [--history <file>]
+  python -m aqef history [--history <file>] [--gate <name>] [--limit N]
+  python -m aqef trend <gate-name> [--history <file>]
 
 Exit codes: 0 on success (gate PASS/WARN), 1 on gate FAIL, 2 on usage/config error.
 """
@@ -20,7 +23,18 @@ from pathlib import Path
 
 from aqef.config import ConfigError, load_config
 from aqef.gates import evaluate_gate
-from aqef.report import gate_result_to_dict, render_markdown_report
+from aqef.history import (
+    DEFAULT_HISTORY,
+    append_run,
+    compute_trend,
+    format_trend,
+    load_runs,
+)
+from aqef.report import (
+    gate_result_to_dict,
+    render_html_report,
+    render_markdown_report,
+)
 
 
 def _load(config_path: str):
@@ -92,6 +106,9 @@ def cmd_gate(args: argparse.Namespace) -> int:
         return metrics
 
     result = evaluate_gate(config.gates[args.gate], metrics)
+    if args.store:
+        record = append_run(args.history, result, metrics)
+        print(f"run stored: {args.history} @ {record.timestamp}", file=sys.stderr)
     if args.format == "json":
         print(json.dumps(gate_result_to_dict(result), indent=2))
     else:
@@ -121,7 +138,18 @@ def cmd_report(args: argparse.Namespace) -> int:
         return metrics
 
     result = evaluate_gate(gate, metrics)
-    report = render_markdown_report(result, subject=args.subject, workflow=workflow)
+    if args.store:
+        record = append_run(
+            args.history,
+            result,
+            metrics,
+            workflow=workflow.name if workflow else None,
+            subject=args.subject,
+        )
+        print(f"run stored: {args.history} @ {record.timestamp}", file=sys.stderr)
+
+    renderer = render_html_report if args.format == "html" else render_markdown_report
+    report = renderer(result, subject=args.subject, workflow=workflow)
 
     if args.out:
         Path(args.out).write_text(report, encoding="utf-8")
@@ -129,6 +157,32 @@ def cmd_report(args: argparse.Namespace) -> int:
     else:
         print(report)
     return 1 if result.failed else 0
+
+
+def cmd_history(args: argparse.Namespace) -> int:
+    runs = load_runs(args.history, gate=args.gate)
+    if not runs:
+        target = f" for gate {args.gate!r}" if args.gate else ""
+        print(f"no runs recorded{target} in {args.history}")
+        return 0
+    for run in runs[-args.limit :]:
+        workflow = run.workflow or "-"
+        subject = run.subject or "-"
+        print(f"{run.timestamp}  {run.verdict:<4}  {run.gate}  {workflow}  {subject}")
+    return 0
+
+
+def cmd_trend(args: argparse.Namespace) -> int:
+    runs = load_runs(args.history, gate=args.gate)
+    if not runs:
+        print(
+            f"error: no runs recorded for gate {args.gate!r} in {args.history} "
+            "(store runs with: aqef gate/report ... --store)",
+            file=sys.stderr,
+        )
+        return 2
+    print(format_trend(args.gate, compute_trend(runs)))
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -158,6 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", choices=("text", "json"), default="text",
         help="output format (default: text)",
     )
+    _add_store_args(p_gate)
     p_gate.set_defaults(func=cmd_gate)
 
     p_report = sub.add_parser(
@@ -172,9 +227,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_report.add_argument(
         "--subject", default="", help='report subject, e.g. "PR #42" or "release 2.3.0"'
     )
+    p_report.add_argument(
+        "--format", choices=("md", "html"), default="md",
+        help="report format (default: md)",
+    )
+    _add_store_args(p_report)
     p_report.set_defaults(func=cmd_report)
 
+    p_history = sub.add_parser("history", help="list stored gate runs")
+    p_history.add_argument("--history", default=DEFAULT_HISTORY)
+    p_history.add_argument("--gate", help="filter by gate name")
+    p_history.add_argument("--limit", type=int, default=10)
+    p_history.set_defaults(func=cmd_history)
+
+    p_trend = sub.add_parser("trend", help="metric and verdict trend for a gate")
+    p_trend.add_argument("gate")
+    p_trend.add_argument("--history", default=DEFAULT_HISTORY)
+    p_trend.set_defaults(func=cmd_trend)
+
     return parser
+
+
+def _add_store_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--store", action="store_true",
+        help="append this run to the history file for trend analysis",
+    )
+    parser.add_argument(
+        "--history", default=DEFAULT_HISTORY,
+        help=f"history file path (default: {DEFAULT_HISTORY})",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

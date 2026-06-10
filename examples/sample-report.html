@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quality Report: PR #42</title>
+<style>
+body { font-family: system-ui, sans-serif; max-width: 880px; margin: 2rem auto;
+       padding: 0 1rem; color: #1f2328; }
+.verdict { font-size: 2.2rem; font-weight: 700; padding: .4rem 1rem;
+           border-radius: 8px; display: inline-block; color: #fff; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+th, td { border: 1px solid #d0d7de; padding: .4rem .7rem; text-align: left; }
+th { background: #f6f8fa; }
+.fail { color: #cf222e; font-weight: 700; }
+.missing { color: #9a6700; font-weight: 700; }
+.pass { color: #1a7f37; }
+.placeholder { color: #57606a; font-style: italic; }
+.meta { color: #57606a; }
+</style>
+</head>
+<body>
+<h1>Quality Report: PR #42</h1>
+<p class="meta">Generated: 2026-06-10 06:32 UTC · Gate: pr-gate · Workflow: pr-quality-gate</p>
+<h2>Verdict</h2>
+<div class="verdict" style="background:#1a7f37">PASS</div>
+<p>All blocking and warning rules satisfied.</p>
+<h2>Rule-by-rule evidence</h2>
+<table>
+<tr><th>Metric</th><th>Actual</th><th>Rule</th><th>Severity</th><th>Outcome</th></tr>
+<tr><td>line_coverage_pct</td><td>86.2</td><td>&gt;= 80</td><td>blocking</td><td class="pass">pass</td></tr>
+<tr><td>tests_failed</td><td>0</td><td>== 0</td><td>blocking</td><td class="pass">pass</td></tr>
+<tr><td>new_critical_vulnerabilities</td><td>0</td><td>== 0</td><td>blocking</td><td class="pass">pass</td></tr>
+<tr><td>mutation_score_pct</td><td>67.5</td><td>&gt;= 60</td><td>warning</td><td class="pass">pass</td></tr>
+<tr><td>flaky_test_rate_pct</td><td>1.1</td><td>&lt;= 2</td><td>warning</td><td class="pass">pass</td></tr>
+<tr><td>avg_cyclomatic_complexity</td><td>7.8</td><td>&lt;= 10</td><td>info</td><td class="pass">pass</td></tr>
+</table>
+<h2>Missing evidence</h2>
+<p>None — every rule had collected evidence.</p>
+<h2>Human checkpoint</h2>
+<p><strong>Policy:</strong> on_fail<br><strong>Required for this run:</strong> no<br><strong>Reviewed by / decision:</strong> <span class="placeholder">to be recorded by the human quality owner</span></p>
+<h2>Residual risk</h2>
+<p class="placeholder">To be completed by the human quality owner: what this run did
+NOT cover and what ships untested if this verdict is acted on.</p>
+</body>
+</html>

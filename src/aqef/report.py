@@ -9,6 +9,7 @@ never fabricates content a human is supposed to supply.
 
 from __future__ import annotations
 
+import html as _html
 from datetime import datetime, timezone
 
 from aqef.config import Workflow
@@ -159,3 +160,111 @@ def render_markdown_report(
         "",
     ]
     return "\n".join(lines)
+
+
+_VERDICT_COLORS = {"PASS": "#1a7f37", "WARN": "#9a6700", "FAIL": "#cf222e"}
+
+_HTML_STYLE = """
+body { font-family: system-ui, sans-serif; max-width: 880px; margin: 2rem auto;
+       padding: 0 1rem; color: #1f2328; }
+.verdict { font-size: 2.2rem; font-weight: 700; padding: .4rem 1rem;
+           border-radius: 8px; display: inline-block; color: #fff; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+th, td { border: 1px solid #d0d7de; padding: .4rem .7rem; text-align: left; }
+th { background: #f6f8fa; }
+.fail { color: #cf222e; font-weight: 700; }
+.missing { color: #9a6700; font-weight: 700; }
+.pass { color: #1a7f37; }
+.placeholder { color: #57606a; font-style: italic; }
+.meta { color: #57606a; }
+"""
+
+
+def render_html_report(
+    gate_result: GateResult,
+    *,
+    subject: str = "",
+    workflow: Workflow | None = None,
+    generated_at: datetime | None = None,
+) -> str:
+    """Render the quality report as a standalone HTML page (no external assets)."""
+    esc = _html.escape
+    when = (generated_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M UTC")
+    title = esc(subject or gate_result.gate)
+    color = _VERDICT_COLORS.get(gate_result.verdict, "#57606a")
+    workflow_name = esc(workflow.name) if workflow else "—"
+
+    rows = []
+    for r in sorted(gate_result.results, key=lambda r: r.passed):
+        actual = "— missing —" if r.missing else f"{r.actual:g}"
+        if r.passed:
+            outcome = '<td class="pass">pass</td>'
+        elif r.missing:
+            outcome = '<td class="missing">MISSING EVIDENCE</td>'
+        else:
+            outcome = '<td class="fail">FAIL</td>'
+        rows.append(
+            f"<tr><td>{esc(r.rule.metric)}</td><td>{actual}</td>"
+            f"<td>{esc(r.rule.operator)} {r.rule.threshold:g}</td>"
+            f"<td>{esc(r.rule.severity)}</td>{outcome}</tr>"
+        )
+
+    missing = [r for r in gate_result.results if r.missing]
+    if missing:
+        missing_html = (
+            "<ul>"
+            + "".join(
+                f"<li><code>{esc(r.rule.metric)}</code> ({esc(r.rule.severity)}) — "
+                "metric was never collected</li>"
+                for r in missing
+            )
+            + "</ul><p>Missing evidence is treated as failure on blocking rules "
+            "(fail-closed), never inferred.</p>"
+        )
+    else:
+        missing_html = "<p>None — every rule had collected evidence.</p>"
+
+    if workflow is not None:
+        required = workflow.human_checkpoint == "always" or (
+            workflow.human_checkpoint == "on_fail" and gate_result.failed
+        )
+        checkpoint_html = (
+            f"<p><strong>Policy:</strong> {esc(workflow.human_checkpoint)}<br>"
+            f"<strong>Required for this run:</strong> {'YES' if required else 'no'}<br>"
+            '<strong>Reviewed by / decision:</strong> <span class="placeholder">'
+            "to be recorded by the human quality owner</span></p>"
+        )
+    else:
+        checkpoint_html = (
+            '<p class="placeholder">No workflow context provided — checkpoint policy '
+            "unknown. The gate verdict above stands as computed.</p>"
+        )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quality Report: {title}</title>
+<style>{_HTML_STYLE}</style>
+</head>
+<body>
+<h1>Quality Report: {title}</h1>
+<p class="meta">Generated: {when} · Gate: {esc(gate_result.gate)} · Workflow: {workflow_name}</p>
+<h2>Verdict</h2>
+<div class="verdict" style="background:{color}">{gate_result.verdict}</div>
+<p>{esc(_verdict_summary(gate_result)).replace("`", "")}</p>
+<h2>Rule-by-rule evidence</h2>
+<table>
+<tr><th>Metric</th><th>Actual</th><th>Rule</th><th>Severity</th><th>Outcome</th></tr>
+{chr(10).join(rows)}
+</table>
+<h2>Missing evidence</h2>
+{missing_html}
+<h2>Human checkpoint</h2>
+{checkpoint_html}
+<h2>Residual risk</h2>
+<p class="placeholder">To be completed by the human quality owner: what this run did
+NOT cover and what ships untested if this verdict is acted on.</p>
+</body>
+</html>
+"""
