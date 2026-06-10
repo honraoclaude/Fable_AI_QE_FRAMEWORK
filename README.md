@@ -19,7 +19,7 @@ implementation that turns the configuration into GO/NO-GO decisions.
 | [agents/](agents/) | Ten agent role specifications (Claude Code–compatible frontmatter, deployable to `.claude/agents/`) |
 | [workflows/](workflows/) | Four end-to-end quality workflows (PR gate, regression, release readiness, AI system evaluation) |
 | [templates/](templates/) | Working artifacts: test plan, quality report, risk assessment, eval rubric |
-| [src/aqef/](src/aqef/) | Reference implementation: config loader/validator, gate engine, workflow orchestrator, CLI |
+| [src/aqef/](src/aqef/) | Reference implementation: config loader/validator, gate engine, workflow orchestrator, report generator, CLI |
 | [tests/](tests/) | pytest suite for the reference implementation |
 | [examples/](examples/) | Sample metrics payload for offline gate evaluation |
 
@@ -37,12 +37,32 @@ python -m aqef list-agents --config ../framework.yaml
 # Evaluate a quality gate against collected metrics (offline, CI-friendly)
 python -m aqef gate pr-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json
 
+# Same evaluation as machine-readable JSON (for dashboards, PR comments, pipelines)
+python -m aqef gate pr-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json --format json
+
+# Render a populated quality report (markdown) for a workflow run
+python -m aqef report pr-quality-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json --subject "PR #42" --out report.md
+
 # Run the test suite
 python -m pytest ../tests -q
 ```
 
-The `gate` command exits `0` on PASS/WARN and `1` on FAIL, so it can be dropped straight
-into a CI pipeline as a blocking step.
+The `gate` and `report` commands exit `0` on PASS/WARN and `1` on FAIL, so they can be
+dropped straight into a CI pipeline as a blocking step.
+
+## Reporting
+
+Three layers, from machine-readable to human-judgment:
+
+1. **JSON** — `gate --format json` emits the full verdict with per-rule evidence for
+   dashboards and automation.
+2. **Markdown quality report** — `report <workflow-or-gate>` renders a populated report
+   in the [templates/quality-report.md](templates/quality-report.md) shape: verdict
+   first, violations on top, missing evidence called out, checkpoint policy applied.
+   See [examples/sample-report.md](examples/sample-report.md) for a generated FAIL report.
+3. **Human sections** — residual risk and the checkpoint decision are emitted as
+   explicit placeholders. The renderer never fabricates content a human is supposed
+   to supply; that judgment is recorded by the human quality owner.
 
 ## The 30-second model
 
