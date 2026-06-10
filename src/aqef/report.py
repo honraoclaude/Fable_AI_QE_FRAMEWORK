@@ -12,6 +12,7 @@ from __future__ import annotations
 import html as _html
 from datetime import datetime, timezone
 
+from aqef.compare import WORSENING, MetricDelta
 from aqef.config import Workflow
 from aqef.gates import GateResult, RuleResult
 from aqef.orchestrator import WorkflowResult
@@ -87,6 +88,7 @@ def render_markdown_report(
     *,
     subject: str = "",
     workflow: Workflow | None = None,
+    deltas: list[MetricDelta] | None = None,
     generated_at: datetime | None = None,
 ) -> str:
     """Render a populated quality report (templates/quality-report.md shape)."""
@@ -134,6 +136,23 @@ def render_markdown_report(
         )
     else:
         lines.append("None — every rule had collected evidence.")
+
+    if deltas is not None:
+        lines += [
+            "",
+            "## Baseline comparison",
+            "",
+            "| Metric | Baseline | Current | Severity | Assessment |",
+            "|--------|----------|---------|----------|------------|",
+        ]
+        for d in sorted(deltas, key=lambda d: d.assessment != WORSENING):
+            baseline_val = "—" if d.baseline is None else f"{d.baseline:g}"
+            current_val = "—" if d.current is None else f"{d.current:g}"
+            assessment = f"**{d.assessment}**" if d.assessment == WORSENING else d.assessment
+            lines.append(
+                f"| {d.metric} | {baseline_val} | {current_val} "
+                f"| {d.severity} | {assessment} |"
+            )
 
     lines += ["", "## Human checkpoint", ""]
     if workflow is not None:
@@ -185,6 +204,7 @@ def render_html_report(
     *,
     subject: str = "",
     workflow: Workflow | None = None,
+    deltas: list[MetricDelta] | None = None,
     generated_at: datetime | None = None,
 ) -> str:
     """Render the quality report as a standalone HTML page (no external assets)."""
@@ -224,6 +244,26 @@ def render_html_report(
     else:
         missing_html = "<p>None — every rule had collected evidence.</p>"
 
+    baseline_html = ""
+    if deltas is not None:
+        delta_rows = []
+        for d in sorted(deltas, key=lambda d: d.assessment != WORSENING):
+            baseline_val = "—" if d.baseline is None else f"{d.baseline:g}"
+            current_val = "—" if d.current is None else f"{d.current:g}"
+            css = "fail" if d.assessment == WORSENING else "pass"
+            delta_rows.append(
+                f"<tr><td>{esc(d.metric)}</td><td>{baseline_val}</td>"
+                f"<td>{current_val}</td><td>{esc(d.severity)}</td>"
+                f'<td class="{css}">{esc(d.assessment)}</td></tr>'
+            )
+        baseline_html = (
+            "<h2>Baseline comparison</h2>\n<table>\n"
+            "<tr><th>Metric</th><th>Baseline</th><th>Current</th>"
+            "<th>Severity</th><th>Assessment</th></tr>\n"
+            + "\n".join(delta_rows)
+            + "\n</table>\n"
+        )
+
     if workflow is not None:
         required = workflow.human_checkpoint == "always" or (
             workflow.human_checkpoint == "on_fail" and gate_result.failed
@@ -260,7 +300,7 @@ def render_html_report(
 </table>
 <h2>Missing evidence</h2>
 {missing_html}
-<h2>Human checkpoint</h2>
+{baseline_html}<h2>Human checkpoint</h2>
 {checkpoint_html}
 <h2>Residual risk</h2>
 <p class="placeholder">To be completed by the human quality owner: what this run did

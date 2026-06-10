@@ -83,6 +83,12 @@ python -m aqef gate pr-gate --config framework.yaml \
 - The comparison appears in text output and in the JSON payload
   (`baseline.deltas`, `baseline.regressions`); metrics absent from either snapshot are
   reported as not comparable, never inferred.
+- With run history enabled (`--store`), `--baseline-from-history` uses the most recent
+  stored **PASS** run as the baseline automatically — "last known good" without manual
+  snapshot management. The baseline is resolved before the current run is stored, so a
+  passing run can never become its own baseline.
+- `report … --baseline <file>` (or `--baseline-from-history`) adds the comparison
+  table to rendered markdown/HTML reports.
 - Typical CI wiring: cache the target branch's last metrics snapshot and compare each
   PR against it — see
   [examples/github-actions-quality-gate.yml](../examples/github-actions-quality-gate.yml).

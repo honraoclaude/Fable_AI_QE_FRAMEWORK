@@ -76,6 +76,15 @@ def load_runs(path: str | Path, gate: str | None = None) -> list[RunRecord]:
     return runs
 
 
+def last_good_metrics(path: str | Path, gate: str) -> dict | None:
+    """Metrics of the most recent PASS run for a gate — the 'last known good'
+    baseline. Returns None when no PASS run is recorded."""
+    for run in reversed(load_runs(path, gate=gate)):
+        if run.verdict == "PASS":
+            return dict(run.metrics)
+    return None
+
+
 def compute_trend(runs: list[RunRecord]) -> dict:
     """Verdict distribution and per-metric movement, oldest -> newest."""
     if not runs:

@@ -65,7 +65,10 @@ Five layers, from machine-readable to human-judgment:
 3. **Baseline regression detection** — `gate --baseline last-good.json
    --fail-on-regression` blocks when any blocking/warning metric *worsened* vs. the
    baseline, even if absolute thresholds still pass. Direction follows each rule
-   (`==` rules use distance-to-target). CI wiring example:
+   (`==` rules use distance-to-target). With history enabled,
+   `--baseline-from-history` compares against the most recent stored PASS run
+   automatically. `report --baseline …` adds the comparison table to rendered
+   reports. CI wiring example:
    [examples/github-actions-quality-gate.yml](examples/github-actions-quality-gate.yml).
 4. **History & trends** — add `--store` to `gate` or `report` to append the run to an
    append-only JSONL history file (default `.aqef/history.jsonl`). Then:

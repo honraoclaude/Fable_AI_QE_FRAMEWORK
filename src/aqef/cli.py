@@ -5,10 +5,12 @@
   python -m aqef list-workflows --config <framework.yaml>
   python -m aqef gate <gate-name> --config <framework.yaml> --metrics <metrics.json>
                      [--format text|json] [--store] [--history <file>]
-                     [--baseline <metrics.json>] [--fail-on-regression]
+                     [--baseline <metrics.json> | --baseline-from-history]
+                     [--fail-on-regression]
   python -m aqef report <gate-or-workflow> --config <framework.yaml>
                      --metrics <metrics.json> [--format md|html] [--out report.md]
                      [--subject "PR #42"] [--store] [--history <file>]
+                     [--baseline <metrics.json> | --baseline-from-history]
   python -m aqef history [--history <file>] [--gate <name>] [--limit N]
   python -m aqef trend <gate-name> [--history <file>]
 
@@ -35,6 +37,7 @@ from aqef.history import (
     append_run,
     compute_trend,
     format_trend,
+    last_good_metrics,
     load_runs,
 )
 from aqef.report import (
@@ -101,6 +104,26 @@ def _load_metrics(path: str) -> dict | int:
     return metrics
 
 
+def _resolve_baseline(args: argparse.Namespace, gate_name: str) -> dict | None | int:
+    """Baseline metrics from --baseline (file) or --baseline-from-history
+    (last PASS run). Returns None when neither was requested, or an exit code
+    on error. Must be called BEFORE --store appends the current run, so a
+    passing run can never become its own baseline."""
+    if args.baseline:
+        return _load_metrics(args.baseline)
+    if args.baseline_from_history:
+        baseline = last_good_metrics(args.history, gate_name)
+        if baseline is None:
+            print(
+                f"error: no PASS run recorded for gate {gate_name!r} in "
+                f"{args.history} — nothing to use as baseline",
+                file=sys.stderr,
+            )
+            return 2
+        return baseline
+    return None
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     config = _load(args.config)
     if args.gate not in config.gates:
@@ -112,9 +135,17 @@ def cmd_gate(args: argparse.Namespace) -> int:
     if isinstance(metrics, int):
         return metrics
 
-    if args.fail_on_regression and not args.baseline:
-        print("error: --fail-on-regression requires --baseline", file=sys.stderr)
+    if args.fail_on_regression and not (args.baseline or args.baseline_from_history):
+        print(
+            "error: --fail-on-regression requires --baseline or "
+            "--baseline-from-history",
+            file=sys.stderr,
+        )
         return 2
+
+    baseline = _resolve_baseline(args, gate_name=args.gate)
+    if isinstance(baseline, int):
+        return baseline
 
     result = evaluate_gate(config.gates[args.gate], metrics)
     if args.store:
@@ -123,10 +154,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
     deltas = None
     regressed = []
-    if args.baseline:
-        baseline = _load_metrics(args.baseline)
-        if isinstance(baseline, int):
-            return baseline
+    if baseline is not None:
         deltas = compare_metrics(config.gates[args.gate], metrics, baseline)
         regressed = regressions(deltas)
 
@@ -173,6 +201,10 @@ def cmd_report(args: argparse.Namespace) -> int:
     if isinstance(metrics, int):
         return metrics
 
+    baseline = _resolve_baseline(args, gate_name=gate.name)
+    if isinstance(baseline, int):
+        return baseline
+
     result = evaluate_gate(gate, metrics)
     if args.store:
         record = append_run(
@@ -184,8 +216,10 @@ def cmd_report(args: argparse.Namespace) -> int:
         )
         print(f"run stored: {args.history} @ {record.timestamp}", file=sys.stderr)
 
+    deltas = compare_metrics(gate, metrics, baseline) if baseline is not None else None
+
     renderer = render_html_report if args.format == "html" else render_markdown_report
-    report = renderer(result, subject=args.subject, workflow=workflow)
+    report = renderer(result, subject=args.subject, workflow=workflow, deltas=deltas)
 
     if args.out:
         Path(args.out).write_text(report, encoding="utf-8")
@@ -248,10 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", choices=("text", "json"), default="text",
         help="output format (default: text)",
     )
-    p_gate.add_argument(
-        "--baseline",
-        help="baseline metrics JSON; reports per-metric movement vs. this snapshot",
-    )
+    _add_baseline_args(p_gate)
     p_gate.add_argument(
         "--fail-on-regression", action="store_true",
         help="exit 1 if any blocking/warning metric worsened vs. the baseline, "
@@ -276,6 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", choices=("md", "html"), default="md",
         help="report format (default: md)",
     )
+    _add_baseline_args(p_report)
     _add_store_args(p_report)
     p_report.set_defaults(func=cmd_report)
 
@@ -291,6 +323,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_trend.set_defaults(func=cmd_trend)
 
     return parser
+
+
+def _add_baseline_args(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--baseline",
+        help="baseline metrics JSON; reports per-metric movement vs. this snapshot",
+    )
+    group.add_argument(
+        "--baseline-from-history", action="store_true",
+        help="use the most recent PASS run from the history file as the baseline",
+    )
 
 
 def _add_store_args(parser: argparse.ArgumentParser) -> None:
