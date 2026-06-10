@@ -13,6 +13,9 @@
                      [--baseline <metrics.json> | --baseline-from-history]
   python -m aqef history [--history <file>] [--gate <name>] [--limit N]
   python -m aqef trend <gate-name> [--history <file>]
+  python -m aqef decide <gate-or-workflow> --config <framework.yaml>
+                     --metrics <metrics.json> [--format text|json]
+                     [--baseline <metrics.json> | --baseline-from-history]
   python -m aqef risks --register <risk-register.yaml>
   python -m aqef select-tests --register <risk-register.yaml>
                      [--changed <file> ...] [--changed-from <list-file>]
@@ -36,6 +39,7 @@ from aqef.compare import (
     regressions,
 )
 from aqef.config import ConfigError, load_config
+from aqef.decision import PROMOTE, decision_to_dict, recommend
 from aqef.gates import evaluate_gate
 from aqef.history import (
     DEFAULT_HISTORY,
@@ -267,6 +271,47 @@ def cmd_trend(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_decide(args: argparse.Namespace) -> int:
+    config = _load(args.config)
+
+    workflow = config.workflows.get(args.target)
+    if workflow is not None:
+        gate = config.gates[workflow.gate]
+    elif args.target in config.gates:
+        gate = config.gates[args.target]
+    else:
+        known = ", ".join(sorted(list(config.workflows) + list(config.gates)))
+        print(
+            f"error: {args.target!r} is neither a workflow nor a gate (known: {known})",
+            file=sys.stderr,
+        )
+        return 2
+
+    metrics = _load_metrics(args.metrics)
+    if isinstance(metrics, int):
+        return metrics
+
+    baseline = _resolve_baseline(args, gate_name=gate.name)
+    if isinstance(baseline, int):
+        return baseline
+
+    result = evaluate_gate(gate, metrics)
+    deltas = compare_metrics(gate, metrics, baseline) if baseline is not None else None
+    decision = recommend(result, deltas)
+
+    if args.format == "json":
+        payload = decision_to_dict(decision)
+        payload["gate"] = gate_result_to_dict(result)
+        print(json.dumps(payload, indent=2))
+    else:
+        print(result.rationale())
+        if deltas is not None:
+            print(format_comparison(deltas))
+        print(decision.describe())
+
+    return 0 if decision.recommendation == PROMOTE else 1
+
+
 def _load_register(path: str):
     try:
         return load_register(path)
@@ -414,6 +459,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_trend.add_argument("gate")
     p_trend.add_argument("--history", default=DEFAULT_HISTORY)
     p_trend.set_defaults(func=cmd_trend)
+
+    p_decide = sub.add_parser(
+        "decide",
+        help="advisory release recommendation: PROMOTE / HOLD / ROLLBACK",
+    )
+    p_decide.add_argument(
+        "target", help="workflow name (preferred) or gate name"
+    )
+    p_decide.add_argument("--config", required=True)
+    p_decide.add_argument("--metrics", required=True, help="JSON file of metric values")
+    p_decide.add_argument(
+        "--format", choices=("text", "json"), default="text",
+        help="output format (default: text)",
+    )
+    _add_baseline_args(p_decide)
+    p_decide.add_argument(
+        "--history", default=DEFAULT_HISTORY,
+        help=f"history file for --baseline-from-history (default: {DEFAULT_HISTORY})",
+    )
+    p_decide.set_defaults(func=cmd_decide)
 
     p_risks = sub.add_parser(
         "risks", help="validate and list a product risk register"

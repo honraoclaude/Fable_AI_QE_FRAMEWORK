@@ -93,6 +93,23 @@ python -m aqef gate pr-gate --config framework.yaml \
   PR against it — see
   [examples/github-actions-quality-gate.yml](../examples/github-actions-quality-gate.yml).
 
+## Release recommendation (PROMOTE / HOLD / ROLLBACK)
+
+`aqef decide <workflow-or-gate>` maps the verdict and baseline movement into an
+**advisory** release recommendation with reasons (evidence-driven release management,
+arXiv:2603.15676):
+
+| Evidence | Recommendation |
+|----------|----------------|
+| Gate FAIL (violation or missing blocking evidence) | ROLLBACK |
+| Gate WARN | HOLD |
+| Gate PASS but regressed vs. baseline | HOLD |
+| Gate PASS, no regressions | PROMOTE |
+
+Exit code 0 only on PROMOTE, so CI can block on anything less. Advisory by design:
+the framework's release workflows run `human_checkpoint: always` — the recommendation
+sharpens the evidence the human decides on; it never ships on its own.
+
 ## Adding a gate
 
 1. Define it in `framework.yaml` under `gates:`.
