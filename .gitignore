@@ -1,5 +1,8 @@
 __pycache__/
 .aqef/
+*.egg-info/
+build/
+dist/
 *.pyc
 .pytest_cache/
 .ruff_cache/

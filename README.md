@@ -26,36 +26,41 @@ implementation that turns the configuration into GO/NO-GO decisions.
 ## Quickstart
 
 ```bash
-cd src
+# Install (editable) — provides the `aqef` command
+pip install -e .
 
 # Validate the framework configuration
-python -m aqef validate ../framework.yaml
+aqef validate framework.yaml
 
 # List the agent fleet
-python -m aqef list-agents --config ../framework.yaml
+aqef list-agents --config framework.yaml
 
 # Evaluate a quality gate against collected metrics (offline, CI-friendly)
-python -m aqef gate pr-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json
+aqef gate pr-gate --config framework.yaml --metrics examples/sample-metrics.json
 
 # Same evaluation as machine-readable JSON (for dashboards, PR comments, pipelines)
-python -m aqef gate pr-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json --format json
+aqef gate pr-gate --config framework.yaml --metrics examples/sample-metrics.json --format json
 
-# Render a populated quality report (markdown) for a workflow run
-python -m aqef report pr-quality-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json --subject "PR #42" --out report.md
+# Render a populated quality report (markdown or --format html) for a workflow run
+aqef report pr-quality-gate --config framework.yaml --metrics examples/sample-metrics.json --subject "PR #42" --out report.md
 
 # Advisory release recommendation (PROMOTE / HOLD / ROLLBACK) from the evidence
-python -m aqef decide pr-quality-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json
+aqef decide pr-quality-gate --config framework.yaml --metrics examples/sample-metrics.json
 
 # Risk-based regression selection from a product risk register
-python -m aqef risks --register ../examples/risk-register.yaml
-python -m aqef select-tests --register ../examples/risk-register.yaml --changed src/payments/capture.py
+aqef risks --register examples/risk-register.yaml
+aqef select-tests --register examples/risk-register.yaml --changed src/payments/capture.py
 
 # Run the test suite
-python -m pytest ../tests -q
+python -m pytest
 ```
 
-The `gate` and `report` commands exit `0` on PASS/WARN and `1` on FAIL, so they can be
-dropped straight into a CI pipeline as a blocking step.
+(`python -m aqef …` works identically if you prefer not to install.)
+
+The `gate` and `report` commands exit `0` on PASS/WARN and `1` on FAIL; `decide` exits
+`0` only on PROMOTE — all drop straight into a CI pipeline as blocking steps. For the
+full wired-together pipeline (selection → gate → recommendation → report artifact), see
+[examples/github-actions-quality-gate.yml](examples/github-actions-quality-gate.yml).
 
 ## Reporting
 

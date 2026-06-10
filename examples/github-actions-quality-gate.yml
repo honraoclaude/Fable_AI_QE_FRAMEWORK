@@ -1,4 +1,8 @@
-# Example: AQEF PR quality gate as a blocking GitHub Actions check.
+# Example: AQEF end-to-end PR quality pipeline as GitHub Actions checks.
+#
+# Wires together the full chain: risk-based test selection -> metrics ->
+# quality gate with baseline regression detection -> advisory release
+# recommendation -> human-readable report artifact.
 #
 # Copy into .github/workflows/ of the project under test and replace the
 # "Collect quality metrics" step with your real metric producers (coverage,
@@ -15,27 +19,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so the diff against base ref works
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install AQEF
-        run: pip install pyyaml && pip install -e ./aqef-framework  # path to this framework
+        run: pip install ./aqef-framework   # path to this framework (provides `aqef`)
+
+      - name: Risk-based test selection
+        # The product risk register turns "what should this PR run?" into a
+        # ranked selection: risks whose code areas the diff touches come
+        # first, then unimpacted high/critical risks. A change touching a
+        # risk area with no linked tests fails loudly here.
+        run: |
+          git diff --name-only origin/${{ github.base_ref }}... > changed.txt
+          aqef select-tests --register risk-register.yaml \
+            --changed-from changed.txt --min-tier high \
+            --format selectors > selected-tests.txt
+          cat selected-tests.txt
 
       - name: Collect quality metrics
-        # Project-specific: produce build/metrics.json with the metric keys your
-        # gate's rules require (line_coverage_pct, tests_failed, ...). Example:
-        #   pytest --cov --cov-report=json -q
+        # Project-specific: run the selected tests and produce
+        # build/metrics.json with the metric keys your gate's rules require
+        # (line_coverage_pct, tests_failed, ...). Example:
+        #   xargs -a selected-tests.txt pytest --cov --cov-report=json -q
         #   python scripts/metrics_to_json.py --out build/metrics.json
         run: |
           mkdir -p build
-          python scripts/collect_metrics.py --out build/metrics.json
+          python scripts/collect_metrics.py --selected selected-tests.txt --out build/metrics.json
 
       - name: Restore baseline from target branch
-        # Optional but recommended (eval-driven practice): compare against the
-        # last stored snapshot of the target branch so a metric that still
-        # clears its threshold but slides toward it is caught as a regression.
+        # Compare against the last stored snapshot of the target branch so a
+        # metric that still clears its threshold but slides toward it is
+        # caught as a regression (eval-driven practice).
         uses: actions/cache/restore@v4
         with:
           path: build/baseline-metrics.json
@@ -43,18 +62,30 @@ jobs:
 
       - name: Evaluate PR quality gate (blocking)
         run: |
-          python -m aqef gate pr-gate \
+          aqef gate pr-gate \
             --config framework.yaml \
             --metrics build/metrics.json \
             $( [ -f build/baseline-metrics.json ] && echo "--baseline build/baseline-metrics.json --fail-on-regression" ) \
             --store --history .aqef/history.jsonl
 
+      - name: Release recommendation (advisory)
+        # PROMOTE / HOLD / ROLLBACK with reasons. Exit 0 only on PROMOTE —
+        # remove `|| true` to make anything less than PROMOTE block the PR.
+        if: always()
+        run: |
+          aqef decide pr-quality-gate \
+            --config framework.yaml \
+            --metrics build/metrics.json \
+            $( [ -f build/baseline-metrics.json ] && echo "--baseline build/baseline-metrics.json" ) \
+            || true
+
       - name: Render quality report
         if: always()  # the report matters most when the gate fails
         run: |
-          python -m aqef report pr-quality-gate \
+          aqef report pr-quality-gate \
             --config framework.yaml \
             --metrics build/metrics.json \
+            $( [ -f build/baseline-metrics.json ] && echo "--baseline build/baseline-metrics.json" ) \
             --subject "PR #${{ github.event.pull_request.number }}" \
             --format html \
             --out build/quality-report.html || true
@@ -65,3 +96,22 @@ jobs:
         with:
           name: quality-report
           path: build/quality-report.html
+
+  # Keeps the baseline fresh: after a merge to the default branch, store that
+  # branch's metrics snapshot for future PRs to compare against.
+  update-baseline:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect metrics on merged state
+        run: |
+          mkdir -p build
+          python scripts/collect_metrics.py --out build/baseline-metrics.json
+      - uses: actions/cache/save@v4
+        with:
+          path: build/baseline-metrics.json
+          key: aqef-baseline-${{ github.base_ref }}
