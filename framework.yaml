@@ -1,0 +1,227 @@
+# AI Agentic Quality Engineering Framework — machine-readable definition.
+# Validated and enforced by src/aqef (see README Quickstart).
+
+version: "1.0"
+name: AI Agentic Quality Engineering Framework
+
+# ---------------------------------------------------------------------------
+# Trust model: autonomy is earned. Agents reference these tiers by number.
+# ---------------------------------------------------------------------------
+trust:
+  default_tier: 1
+  tiers:
+    1: suggest                    # agent proposes; human decides
+    2: act_with_review            # agent acts; human reviews after
+    3: autonomous_low_risk        # autonomous on low-risk work only
+    4: autonomous_with_oversight  # critical work with sampled human oversight
+
+# ---------------------------------------------------------------------------
+# Agent fleet: ten roles. `spec` points at the full role definition.
+# ---------------------------------------------------------------------------
+agents:
+  qe-orchestrator:
+    role: orchestration
+    trust_tier: 2
+    spec: agents/qe-orchestrator.md
+  qe-test-strategist:
+    role: planning
+    trust_tier: 1
+    spec: agents/qe-test-strategist.md
+  qe-defect-predictor:
+    role: risk-analysis
+    trust_tier: 2
+    spec: agents/qe-defect-predictor.md
+  qe-test-generator:
+    role: test-creation
+    trust_tier: 2
+    spec: agents/qe-test-generator.md
+  qe-test-executor:
+    role: execution
+    trust_tier: 3
+    spec: agents/qe-test-executor.md
+  qe-coverage-analyzer:
+    role: analysis
+    trust_tier: 3
+    spec: agents/qe-coverage-analyzer.md
+  qe-security-scanner:
+    role: security
+    trust_tier: 2
+    spec: agents/qe-security-scanner.md
+  qe-performance-tester:
+    role: performance
+    trust_tier: 2
+    spec: agents/qe-performance-tester.md
+  qe-exploratory-tester:
+    role: exploration
+    trust_tier: 1
+    spec: agents/qe-exploratory-tester.md
+  qe-quality-gatekeeper:
+    role: gating
+    trust_tier: 2
+    spec: agents/qe-quality-gatekeeper.md
+
+# ---------------------------------------------------------------------------
+# Quality gates: rules over metrics. Severity semantics (enforced by aqef):
+#   blocking → rule failure (or missing metric) fails the gate       → FAIL
+#   warning  → rule failure (or missing metric) degrades the verdict → WARN
+#   info     → recorded in the report, never changes the verdict
+# ---------------------------------------------------------------------------
+gates:
+  pr-gate:
+    description: Pre-merge gate for pull requests.
+    rules:
+      - metric: line_coverage_pct
+        operator: ">="
+        threshold: 80
+        severity: blocking
+      - metric: tests_failed
+        operator: "=="
+        threshold: 0
+        severity: blocking
+      - metric: new_critical_vulnerabilities
+        operator: "=="
+        threshold: 0
+        severity: blocking
+      - metric: mutation_score_pct
+        operator: ">="
+        threshold: 60
+        severity: warning
+      - metric: flaky_test_rate_pct
+        operator: "<="
+        threshold: 2
+        severity: warning
+      - metric: avg_cyclomatic_complexity
+        operator: "<="
+        threshold: 10
+        severity: info
+
+  regression-gate:
+    description: Scheduled regression confidence gate.
+    rules:
+      - metric: regression_pass_rate_pct
+        operator: ">="
+        threshold: 98
+        severity: blocking
+      - metric: flaky_test_rate_pct
+        operator: "<="
+        threshold: 5
+        severity: warning
+      - metric: regression_runtime_minutes
+        operator: "<="
+        threshold: 30
+        severity: info
+
+  release-gate:
+    description: Release readiness gate. Stricter than the PR gate.
+    rules:
+      - metric: line_coverage_pct
+        operator: ">="
+        threshold: 85
+        severity: blocking
+      - metric: open_critical_defects
+        operator: "=="
+        threshold: 0
+        severity: blocking
+      - metric: new_critical_vulnerabilities
+        operator: "=="
+        threshold: 0
+        severity: blocking
+      - metric: p95_latency_ms
+        operator: "<="
+        threshold: 500
+        severity: blocking
+      - metric: error_rate_pct
+        operator: "<="
+        threshold: 0.1
+        severity: warning
+      - metric: open_high_defects
+        operator: "<="
+        threshold: 3
+        severity: warning
+
+  ai-eval-gate:
+    description: Gate for AI/LLM systems under test (evals, not just tests).
+    rules:
+      - metric: eval_pass_rate_pct
+        operator: ">="
+        threshold: 90
+        severity: blocking
+      - metric: hallucination_rate_pct
+        operator: "<="
+        threshold: 2
+        severity: blocking
+      - metric: prompt_injection_failures
+        operator: "=="
+        threshold: 0
+        severity: blocking
+      - metric: regression_vs_baseline_pct
+        operator: ">="
+        threshold: 0
+        severity: warning
+      - metric: avg_cost_per_task_usd
+        operator: "<="
+        threshold: 0.50
+        severity: info
+
+# ---------------------------------------------------------------------------
+# Workflows: ordered agent steps ending at a gate.
+# human_checkpoint: always | on_fail | never
+# ---------------------------------------------------------------------------
+workflows:
+  pr-quality-gate:
+    description: Risk-targeted quality pipeline for every pull request.
+    steps:
+      - agent: qe-defect-predictor
+        action: analyze_change_risk
+      - agent: qe-test-generator
+        action: generate_targeted_tests
+      - agent: qe-test-executor
+        action: run_tests
+      - agent: qe-coverage-analyzer
+        action: analyze_coverage
+      - agent: qe-security-scanner
+        action: scan_diff
+    gate: pr-gate
+    human_checkpoint: on_fail
+
+  regression-cycle:
+    description: Scheduled regression with flake hunting.
+    steps:
+      - agent: qe-test-executor
+        action: run_regression_suite
+      - agent: qe-test-executor
+        action: retry_and_classify_failures
+      - agent: qe-coverage-analyzer
+        action: analyze_coverage
+    gate: regression-gate
+    human_checkpoint: on_fail
+
+  release-readiness:
+    description: Full release assessment across functional and non-functional quality.
+    steps:
+      - agent: qe-test-strategist
+        action: assess_open_risk
+      - agent: qe-test-executor
+        action: run_full_suite
+      - agent: qe-security-scanner
+        action: full_scan
+      - agent: qe-performance-tester
+        action: run_load_profile
+      - agent: qe-exploratory-tester
+        action: targeted_session
+    gate: release-gate
+    human_checkpoint: always
+
+  ai-system-evaluation:
+    description: Evaluation pipeline for AI/LLM features (quality of the AI itself).
+    steps:
+      - agent: qe-test-strategist
+        action: define_eval_dimensions
+      - agent: qe-test-generator
+        action: generate_eval_cases
+      - agent: qe-test-executor
+        action: run_evals
+      - agent: qe-security-scanner
+        action: adversarial_probe
+    gate: ai-eval-gate
+    human_checkpoint: always
