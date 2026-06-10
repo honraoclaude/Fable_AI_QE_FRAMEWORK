@@ -43,6 +43,10 @@ python -m aqef gate pr-gate --config ../framework.yaml --metrics ../examples/sam
 # Render a populated quality report (markdown) for a workflow run
 python -m aqef report pr-quality-gate --config ../framework.yaml --metrics ../examples/sample-metrics.json --subject "PR #42" --out report.md
 
+# Risk-based regression selection from a product risk register
+python -m aqef risks --register ../examples/risk-register.yaml
+python -m aqef select-tests --register ../examples/risk-register.yaml --changed src/payments/capture.py
+
 # Run the test suite
 python -m pytest ../tests -q
 ```

@@ -43,6 +43,37 @@ Confirmed flakes generate *quarantine proposals*. Quarantine is a human decision
 executor tier 3, and every quarantined test gets a backlog item — quarantine without
 follow-up is silent coverage loss.
 
+## Risk-based test selection
+
+Rerunning everything is the fallback, not the strategy. The product risk register
+([examples/risk-register.yaml](../examples/risk-register.yaml)) makes selection
+mechanical:
+
+```bash
+# Pure risk-based: everything protecting medium+ risks, ranked by score
+python -m aqef select-tests --register risk-register.yaml --min-tier medium
+
+# Change-aware: risks whose code areas the diff touches come first, always included
+git diff --name-only origin/main... > changed.txt
+python -m aqef select-tests --register risk-register.yaml \
+  --changed-from changed.txt --min-tier high --format selectors | xargs pytest
+```
+
+Selection rules (implemented in `src/aqef/risks.py`):
+
+- Each risk carries likelihood × impact (1–5 each) → score → tier
+  (critical ≥ 15, high ≥ 10, medium ≥ 5, low < 5), code `areas` globs, and the
+  `tests` selectors that protect it.
+- **Impacted risks always run.** A changed file matching a risk's area selects that
+  risk's tests first, regardless of tier — a change in low-risk code is still a change.
+- Unimpacted risks run when at or above `--min-tier`, ranked by score.
+- A change touching a risk area with **no linked tests** triggers a loud warning:
+  the change ships unprotected against that risk. `aqef risks` flags high/critical
+  risks without tests at any time.
+- Humans own the likelihood/impact judgments (see
+  [templates/risk-assessment.md](../templates/risk-assessment.md)); agents keep
+  `areas` and `tests` in sync with the codebase as it evolves.
+
 ## Suite stewardship
 
 The regression cycle is also where the suite itself is maintained:

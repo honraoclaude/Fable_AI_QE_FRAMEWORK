@@ -1,0 +1,80 @@
+# Product risk register — drives risk-based regression selection.
+# Score = likelihood x impact (1-5 each). Tiers: critical >= 15, high >= 10,
+# medium >= 5, low < 5. Humans own likelihood/impact judgments; agents keep
+# areas and tests in sync with the codebase.
+
+version: "1.0"
+product: example-commerce-platform
+
+risks:
+  - id: R-001
+    title: Payment capture fails or double-charges
+    description: >
+      Card capture errors or duplicate charges during checkout. Direct revenue
+      and chargeback exposure; past sev-1 in the retry path.
+    areas: ["src/payments/*", "src/billing/*"]
+    likelihood: 3
+    impact: 5
+    tests:
+      - "tests/payments/"
+      - "-m payments_e2e"
+    owner: payments-team
+    review_by: "2026-09-01"
+
+  - id: R-002
+    title: Authentication bypass or session fixation
+    description: Unauthorized account access via login, session, or token flaws.
+    areas: ["src/auth/*", "src/middleware/session*"]
+    likelihood: 2
+    impact: 5
+    tests:
+      - "tests/auth/"
+      - "-m security_auth"
+    owner: platform-team
+    review_by: "2026-09-01"
+
+  - id: R-003
+    title: Order state corruption under concurrent updates
+    description: >
+      Race conditions between fulfillment webhooks and customer edits leave
+      orders in inconsistent states. Hard to repair, support-heavy.
+    areas: ["src/orders/*"]
+    likelihood: 4
+    impact: 4
+    tests:
+      - "tests/orders/test_state_machine.py"
+      - "tests/orders/test_concurrency.py"
+    owner: orders-team
+    review_by: "2026-08-01"
+
+  - id: R-004
+    title: Search returns stale or irrelevant results
+    description: Index drift after catalog updates degrades conversion.
+    areas: ["src/search/*", "src/catalog/indexer*"]
+    likelihood: 3
+    impact: 3
+    tests:
+      - "tests/search/"
+    owner: discovery-team
+    review_by: "2026-10-01"
+
+  - id: R-005
+    title: Email notification delays
+    description: Transactional emails (receipts, resets) delayed beyond SLA.
+    areas: ["src/notifications/*"]
+    likelihood: 3
+    impact: 2
+    tests:
+      - "tests/notifications/test_dispatch.py"
+    owner: platform-team
+    review_by: "2026-12-01"
+
+  - id: R-006
+    title: Admin report export memory exhaustion
+    description: Large CSV exports OOM the worker; internal users only.
+    areas: ["src/admin/exports*"]
+    likelihood: 2
+    impact: 2
+    tests: []   # known gap — flagged by `aqef risks` until linked
+    owner: internal-tools
+    review_by: "2026-12-01"

@@ -13,6 +13,11 @@
                      [--baseline <metrics.json> | --baseline-from-history]
   python -m aqef history [--history <file>] [--gate <name>] [--limit N]
   python -m aqef trend <gate-name> [--history <file>]
+  python -m aqef risks --register <risk-register.yaml>
+  python -m aqef select-tests --register <risk-register.yaml>
+                     [--changed <file> ...] [--changed-from <list-file>]
+                     [--min-tier low|medium|high|critical] [--limit N]
+                     [--format text|json|selectors]
 
 Exit codes: 0 on success (gate PASS/WARN), 1 on gate FAIL, 2 on usage/config error.
 """
@@ -44,6 +49,13 @@ from aqef.report import (
     gate_result_to_dict,
     render_html_report,
     render_markdown_report,
+)
+from aqef.risks import (
+    TIERS,
+    RiskRegisterError,
+    load_register,
+    select_tests,
+    selection_to_dict,
 )
 
 
@@ -255,6 +267,87 @@ def cmd_trend(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_register(path: str):
+    try:
+        return load_register(path)
+    except FileNotFoundError:
+        print(f"error: risk register not found: {path}", file=sys.stderr)
+        raise SystemExit(2)
+    except RiskRegisterError as exc:
+        print(f"error: invalid risk register: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def cmd_risks(args: argparse.Namespace) -> int:
+    register = _load_register(args.register)
+    print(f"Risk register: {register.product} — {len(register.risks)} risk(s)")
+    ordered = sorted(register.risks, key=lambda r: -r.score)
+    for risk in ordered:
+        tests = f"{len(risk.tests)} test selector(s)" if risk.tests else "NO TESTS"
+        print(
+            f"  {risk.id}  score {risk.score:>2} ({risk.tier:<8})  "
+            f"{risk.title}  [{tests}]"
+        )
+    untested = register.untested(min_tier="high")
+    for risk in untested:
+        print(
+            f"WARNING: {risk.id} is {risk.tier} (score {risk.score}) "
+            "but has no linked tests — untested risk",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def cmd_select_tests(args: argparse.Namespace) -> int:
+    register = _load_register(args.register)
+
+    changed: list[str] = list(args.changed or [])
+    if args.changed_from:
+        try:
+            content = Path(args.changed_from).read_text(encoding="utf-8-sig")
+        except FileNotFoundError:
+            print(
+                f"error: changed-files list not found: {args.changed_from}",
+                file=sys.stderr,
+            )
+            return 2
+        changed += [line.strip() for line in content.splitlines() if line.strip()]
+
+    items = select_tests(
+        register,
+        changed_files=changed or None,
+        min_tier=args.min_tier,
+        limit=args.limit,
+    )
+
+    # A change inside a risk area that has no linked tests is an unprotected
+    # change — the selection can't cover it, so say so loudly.
+    if changed:
+        for risk in register.risks:
+            if not risk.tests and risk.matches_changed(changed):
+                print(
+                    f"WARNING: change touches {risk.id} ({risk.tier}, "
+                    f"'{risk.title}') but the risk has NO linked tests — "
+                    "this change ships unprotected against it",
+                    file=sys.stderr,
+                )
+
+    if args.format == "json":
+        print(json.dumps(selection_to_dict(items), indent=2))
+    elif args.format == "selectors":
+        for item in items:  # bare selectors, one per line — pipe into a runner
+            print(item.selector)
+    else:
+        if not items:
+            print("no tests selected (no risks at or above the tier threshold)")
+        scope = f"{len(changed)} changed file(s)" if changed else "no change context"
+        print(f"Selected {len(items)} selector(s) [{scope}, min tier: {args.min_tier}]")
+        for item in items:
+            marker = "IMPACTED " if item.impacted else "         "
+            print(f"  {marker}{item.selector}    <- {item.reason}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="aqef",
@@ -321,6 +414,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_trend.add_argument("gate")
     p_trend.add_argument("--history", default=DEFAULT_HISTORY)
     p_trend.set_defaults(func=cmd_trend)
+
+    p_risks = sub.add_parser(
+        "risks", help="validate and list a product risk register"
+    )
+    p_risks.add_argument("--register", required=True, help="risk register YAML file")
+    p_risks.set_defaults(func=cmd_risks)
+
+    p_select = sub.add_parser(
+        "select-tests", help="risk-based regression test selection"
+    )
+    p_select.add_argument("--register", required=True, help="risk register YAML file")
+    p_select.add_argument(
+        "--changed", nargs="*",
+        help="changed file paths (e.g. from git diff --name-only)",
+    )
+    p_select.add_argument(
+        "--changed-from",
+        help="file containing changed paths, one per line",
+    )
+    p_select.add_argument(
+        "--min-tier", choices=TIERS, default="medium",
+        help="include unimpacted risks at or above this tier (default: medium); "
+        "risks whose areas match changed files are always included",
+    )
+    p_select.add_argument("--limit", type=int, help="cap the number of selectors")
+    p_select.add_argument(
+        "--format", choices=("text", "json", "selectors"), default="text",
+        help="'selectors' prints bare selectors one per line for piping",
+    )
+    p_select.set_defaults(func=cmd_select_tests)
 
     return parser
 
