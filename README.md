@@ -58,6 +58,9 @@ aqef select-tests --register examples/risk-register.yaml --changed src/payments/
 # Risk-weighted coverage: where does low coverage meet high risk?
 aqef coverage --register examples/risk-register.yaml --coverage coverage.json --enforce
 
+# Eval datasets for AI features: validate, audit composition, score into gate metrics
+aqef evals --dataset examples/eval-dataset.yaml --results examples/eval-results.jsonl
+
 # Run the test suite
 python -m pytest
 ```

@@ -54,6 +54,30 @@ HUMAN CHECKPOINT (always)
 - **Failed production cases become regression evals.** The eval set grows from reality:
   every confirmed production failure is distilled into a permanent eval case.
 
+## Mechanical support (`aqef evals`)
+
+The dataset and its scoring are first-class artifacts
+([examples/eval-dataset.yaml](../examples/eval-dataset.yaml)):
+
+```bash
+# Validate the dataset and audit its composition (sources, thin dimensions)
+aqef evals --dataset eval-dataset.yaml
+
+# Score a results file (one {case_id, score} JSON line per run) into the
+# exact metrics the ai-eval-gate consumes
+aqef evals --dataset eval-dataset.yaml --results results.jsonl --out eval-metrics.json
+aqef gate ai-eval-gate --config framework.yaml --metrics eval-metrics.json
+```
+
+- Pass thresholds are **per dimension** — a score of 4 passes correctness
+  (`>= 3`) and fails safety (`>= 5`).
+- Cases with no scored runs are surfaced as `eval_cases_missing_results`, never
+  silently dropped; add `eval_cases_missing_results == 0` as a blocking rule to
+  keep the gate fail-closed end to end.
+- Composition warnings enforce dataset hygiene: thin dimensions, no
+  production-failure cases (golden sets drift without them), no adversarial
+  cases (injection resistance untested).
+
 ## Adversarial probing scope
 
 The security scanner probes the AI feature itself:

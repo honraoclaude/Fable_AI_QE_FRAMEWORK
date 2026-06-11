@@ -20,6 +20,8 @@
   python -m aqef dashboard [--config <file>] [--history <file>]
                      [--register <file>] [--port N] [--open]
   python -m aqef risks --register <risk-register.yaml>
+  python -m aqef evals --dataset <evals.yaml> [--results <results.jsonl>]
+                     [--out <metrics.json>] [--format text|json]
   python -m aqef coverage --register <risk-register.yaml> --coverage <report.json>
                      [--threshold N] [--enforce] [--format text|json]
   python -m aqef select-tests --register <risk-register.yaml>
@@ -391,6 +393,90 @@ def cmd_risks(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_evals(args: argparse.Namespace) -> int:
+    from aqef.evals import (
+        EvalError,
+        dataset_stats,
+        load_dataset,
+        load_results,
+        score_results,
+    )
+
+    try:
+        dataset = load_dataset(args.dataset)
+    except FileNotFoundError:
+        print(f"error: dataset not found: {args.dataset}", file=sys.stderr)
+        return 2
+    except EvalError as exc:
+        print(f"error: invalid dataset: {exc}", file=sys.stderr)
+        return 2
+
+    stats = dataset_stats(dataset)
+    payload: dict = {"stats": stats}
+
+    if args.results:
+        try:
+            results = load_results(args.results)
+        except FileNotFoundError:
+            print(f"error: results not found: {args.results}", file=sys.stderr)
+            return 2
+        except EvalError as exc:
+            print(f"error: invalid results: {exc}", file=sys.stderr)
+            return 2
+        payload["metrics"] = score_results(dataset, results)
+
+    if args.out:
+        if "metrics" not in payload:
+            print("error: --out requires --results", file=sys.stderr)
+            return 2
+        gate_metrics = {
+            "eval_pass_rate_pct": payload["metrics"]["eval_pass_rate_pct"],
+            "eval_cases_missing_results": payload["metrics"][
+                "eval_cases_missing_results"
+            ],
+        }
+        Path(args.out).write_text(
+            json.dumps(gate_metrics, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"gate metrics written: {args.out}")
+
+    if args.format == "json":
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"Eval dataset: {stats['feature']} — {stats['total_cases']} case(s)")
+        for name, count in stats["per_dimension"].items():
+            dim = dataset.dimensions[name]
+            print(
+                f"  {name:<14} {count} case(s), pass >= {dim.pass_threshold}, "
+                f"{dim.runs_per_case} run(s)/case"
+            )
+        sources = ", ".join(f"{k}: {v}" for k, v in sorted(stats["per_source"].items()))
+        print(f"  sources: {sources}")
+        if "metrics" in payload:
+            m = payload["metrics"]
+            print(
+                f"Results: {m['eval_runs_total']} run(s) scored — "
+                f"eval_pass_rate_pct = {m['eval_pass_rate_pct']:g}"
+            )
+            for name, rate in m["per_dimension_pass_rate_pct"].items():
+                shown = "no runs" if rate is None else f"{rate:g}%"
+                print(f"  {name:<14} {shown}")
+            if m["missing_case_ids"]:
+                print(
+                    f"  MISSING RESULTS for {len(m['missing_case_ids'])} case(s): "
+                    + ", ".join(m["missing_case_ids"])
+                )
+            if m["unknown_case_ids"]:
+                print(
+                    "  unknown case ids in results: "
+                    + ", ".join(m["unknown_case_ids"])
+                )
+
+    for warning in stats["warnings"]:
+        print(f"WARNING: {warning}", file=sys.stderr)
+    return 0
+
+
 def cmd_coverage(args: argparse.Namespace) -> int:
     from aqef.coverage import (
         CoverageError,
@@ -598,6 +684,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_risks.add_argument("--register", required=True, help="risk register YAML file")
     p_risks.set_defaults(func=cmd_risks)
+
+    p_evals = sub.add_parser(
+        "evals", help="validate an eval dataset and score results into gate metrics"
+    )
+    p_evals.add_argument("--dataset", required=True, help="eval dataset YAML")
+    p_evals.add_argument(
+        "--results", help="scored runs JSONL ({case_id, score} per line)"
+    )
+    p_evals.add_argument(
+        "--out", help="write gate-ready metrics JSON (requires --results)"
+    )
+    p_evals.add_argument(
+        "--format", choices=("text", "json"), default="text",
+        help="output format (default: text)",
+    )
+    p_evals.set_defaults(func=cmd_evals)
 
     p_cov = sub.add_parser(
         "coverage", help="risk-weighted coverage analysis against the register"
