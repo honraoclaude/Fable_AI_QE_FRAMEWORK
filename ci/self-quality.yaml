@@ -1,0 +1,43 @@
+# AQEF applied to itself: the framework's own quality gate, evaluated in CI.
+# Deliberately minimal and honest — it only gates on evidence the CI pipeline
+# actually collects (coverage + test results). No fabricated metrics.
+
+version: "1.0"
+name: AQEF self-quality
+
+trust:
+  default_tier: 3
+  tiers:
+    3: autonomous_low_risk
+
+agents:
+  ci-test-executor:
+    role: execution
+    trust_tier: 3
+    spec: agents/qe-test-executor.md
+
+gates:
+  self-gate:
+    description: The framework's own bar, enforced on every push.
+    rules:
+      - metric: tests_failed
+        operator: "=="
+        threshold: 0
+        severity: blocking
+      - metric: line_coverage_pct
+        operator: ">="
+        threshold: 85
+        severity: blocking
+      - metric: tests_passed
+        operator: ">="
+        threshold: 100
+        severity: warning   # suite shrinking below 100 tests deserves a look
+
+workflows:
+  self-check:
+    description: CI test run gated on the self-gate.
+    steps:
+      - agent: ci-test-executor
+        action: run_tests
+    gate: self-gate
+    human_checkpoint: on_fail

@@ -1,0 +1,67 @@
+# AQEF's own CI: test the framework, then make it pass its own quality gate.
+# Dogfooding — the gate consumes only evidence this pipeline actually collects.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-self-gate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -e . pytest pytest-cov
+
+      - name: Validate the shipped framework definition
+        run: |
+          aqef validate framework.yaml
+          aqef validate ci/self-quality.yaml
+          aqef risks --register examples/risk-register.yaml
+
+      - name: Run tests with coverage
+        run: >
+          python -m pytest
+          --cov=aqef --cov-report=json:coverage.json
+          --junitxml=junit.xml
+
+      - name: Build self-gate metrics from the evidence
+        if: always()
+        run: >
+          python scripts/self_metrics.py
+          --coverage coverage.json --junit junit.xml
+          --out build/self-metrics.json
+
+      - name: Self quality gate (blocking)
+        if: always()
+        run: >
+          aqef gate self-gate
+          --config ci/self-quality.yaml
+          --metrics build/self-metrics.json
+
+      - name: Self quality report
+        if: always()
+        run: >
+          aqef report self-check
+          --config ci/self-quality.yaml
+          --metrics build/self-metrics.json
+          --subject "${{ github.sha }}"
+          --format html --out build/self-quality-report.html
+
+      - name: Upload self quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-quality-report-py${{ matrix.python-version }}
+          path: build/self-quality-report.html

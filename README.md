@@ -21,6 +21,7 @@ implementation that turns the configuration into GO/NO-GO decisions.
 | [templates/](templates/) | Working artifacts: test plan, quality report, risk assessment, eval rubric |
 | [src/aqef/](src/aqef/) | Reference implementation: config loader/validator, gate engine, workflow orchestrator, report generator, CLI |
 | [tests/](tests/) | pytest suite for the reference implementation |
+| [ci/](ci/) + [.github/workflows/ci.yml](.github/workflows/ci.yml) | Dogfooding: the framework's CI runs its tests, then gates itself with `aqef gate self-gate` on real coverage/test evidence |
 | [examples/](examples/) | Sample metrics payload for offline gate evaluation |
 
 ## Quickstart
