@@ -20,6 +20,8 @@
   python -m aqef dashboard [--config <file>] [--history <file>]
                      [--register <file>] [--port N] [--open]
   python -m aqef risks --register <risk-register.yaml>
+  python -m aqef coverage --register <risk-register.yaml> --coverage <report.json>
+                     [--threshold N] [--enforce] [--format text|json]
   python -m aqef select-tests --register <risk-register.yaml>
                      [--changed <file> ...] [--changed-from <list-file>]
                      [--min-tier low|medium|high|critical] [--limit N]
@@ -385,6 +387,48 @@ def cmd_risks(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_coverage(args: argparse.Namespace) -> int:
+    from aqef.coverage import (
+        CoverageError,
+        analyze_risk_coverage,
+        format_risk_coverage,
+        load_coverage,
+        risk_coverage_to_dict,
+        undercovered,
+    )
+
+    register = _load_register(args.register)
+    try:
+        file_coverage = load_coverage(args.coverage)
+    except FileNotFoundError:
+        print(f"error: coverage report not found: {args.coverage}", file=sys.stderr)
+        return 2
+    except CoverageError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    results = analyze_risk_coverage(register, file_coverage)
+    gaps = undercovered(results, args.threshold)
+
+    if args.format == "json":
+        payload = risk_coverage_to_dict(results)
+        payload["undercovered_high_risk"] = [rc.risk.id for rc in gaps]
+        print(json.dumps(payload, indent=2))
+    else:
+        print(format_risk_coverage(results, args.threshold))
+
+    for rc in gaps:
+        print(
+            f"WARNING: {rc.risk.id} ({rc.risk.tier}, score {rc.risk.score}) is at "
+            f"{rc.coverage_pct:g}% coverage — below {args.threshold:g}% in a "
+            "high-risk area",
+            file=sys.stderr,
+        )
+    if args.enforce and gaps:
+        return 1
+    return 0
+
+
 def cmd_select_tests(args: argparse.Namespace) -> int:
     register = _load_register(args.register)
 
@@ -546,6 +590,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_risks.add_argument("--register", required=True, help="risk register YAML file")
     p_risks.set_defaults(func=cmd_risks)
+
+    p_cov = sub.add_parser(
+        "coverage", help="risk-weighted coverage analysis against the register"
+    )
+    p_cov.add_argument("--register", required=True, help="risk register YAML file")
+    p_cov.add_argument(
+        "--coverage", required=True,
+        help="coverage report JSON (coverage.py or Istanbul/c8 json-summary)",
+    )
+    p_cov.add_argument(
+        "--threshold", type=float, default=80,
+        help="minimum coverage %% for high/critical risk areas (default: 80)",
+    )
+    p_cov.add_argument(
+        "--enforce", action="store_true",
+        help="exit 1 when any high/critical risk area is below the threshold",
+    )
+    p_cov.add_argument(
+        "--format", choices=("text", "json"), default="text",
+        help="output format (default: text)",
+    )
+    p_cov.set_defaults(func=cmd_coverage)
 
     p_select = sub.add_parser(
         "select-tests", help="risk-based regression test selection"

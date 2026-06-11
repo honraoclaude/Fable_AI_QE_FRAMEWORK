@@ -55,6 +55,9 @@ aqef decide pr-quality-gate --config framework.yaml --metrics examples/sample-me
 aqef risks --register examples/risk-register.yaml
 aqef select-tests --register examples/risk-register.yaml --changed src/payments/capture.py
 
+# Risk-weighted coverage: where does low coverage meet high risk?
+aqef coverage --register examples/risk-register.yaml --coverage coverage.json --enforce
+
 # Run the test suite
 python -m pytest
 ```
