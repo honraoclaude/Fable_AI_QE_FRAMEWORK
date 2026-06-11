@@ -1,0 +1,16 @@
+{
+  "meta": {"format": "coverage.py json (sample, matches examples/risk-register.yaml areas)"},
+  "files": {
+    "src/payments/capture.py": {"summary": {"percent_covered": 58.0, "num_statements": 340}},
+    "src/payments/refund.py": {"summary": {"percent_covered": 88.0, "num_statements": 120}},
+    "src/billing/invoice.py": {"summary": {"percent_covered": 72.0, "num_statements": 200}},
+    "src/auth/login.py": {"summary": {"percent_covered": 91.0, "num_statements": 180}},
+    "src/auth/tokens.py": {"summary": {"percent_covered": 86.5, "num_statements": 150}},
+    "src/orders/state.py": {"summary": {"percent_covered": 94.0, "num_statements": 260}},
+    "src/orders/webhooks.py": {"summary": {"percent_covered": 69.0, "num_statements": 140}},
+    "src/search/query.py": {"summary": {"percent_covered": 83.0, "num_statements": 210}},
+    "src/notifications/dispatch.py": {"summary": {"percent_covered": 77.0, "num_statements": 90}},
+    "src/admin/exports_csv.py": {"summary": {"percent_covered": 12.0, "num_statements": 160}}
+  },
+  "totals": {"percent_covered": 76.4}
+}

@@ -66,6 +66,34 @@ class TestBuildData:
         assert data["register"] is None
         assert data["errors"] == []
 
+    def test_coverage_section_when_report_provided(self, tmp_path):
+        coverage = tmp_path / "cov.json"
+        coverage.write_text(
+            json.dumps({
+                "files": {
+                    "src/payments/capture.py": {
+                        "summary": {"percent_covered": 50.0, "num_statements": 300}
+                    }
+                }
+            }),
+            encoding="utf-8",
+        )
+        data = build_dashboard_data(
+            None, None, str(REGISTER_YAML), str(coverage)
+        )
+        rc = data["risk_coverage"]
+        assert rc is not None
+        assert "R-001" in rc["undercovered_high_risk"]
+        top = rc["risk_coverage"][0]
+        assert top["risk_id"] == "R-001"
+        assert top["coverage_pct"] == 50.0
+
+    def test_coverage_requires_register(self, tmp_path):
+        coverage = tmp_path / "cov.json"
+        coverage.write_text(json.dumps({"files": {}}), encoding="utf-8")
+        data = build_dashboard_data(None, None, None, str(coverage))
+        assert data["risk_coverage"] is None
+
     def test_broken_register_reported_not_swallowed(self, tmp_path):
         bad = tmp_path / "bad.yaml"
         bad.write_text("risks: []\n", encoding="utf-8")

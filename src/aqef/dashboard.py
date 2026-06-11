@@ -17,6 +17,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from aqef.config import ConfigError, load_config
+from aqef.coverage import (
+    CoverageError,
+    analyze_risk_coverage,
+    load_coverage,
+    risk_coverage_to_dict,
+    undercovered,
+)
 from aqef.history import compute_trend, load_runs
 from aqef.risks import RiskRegisterError, load_register
 
@@ -25,6 +32,7 @@ def build_dashboard_data(
     config_path: str | None = None,
     history_path: str | None = None,
     register_path: str | None = None,
+    coverage_path: str | None = None,
 ) -> dict:
     """Assemble everything the dashboard renders. Missing sources degrade
     gracefully; parse errors are reported, never swallowed."""
@@ -34,11 +42,13 @@ def build_dashboard_data(
             "config": config_path,
             "history": history_path,
             "register": register_path,
+            "coverage": coverage_path,
         },
         "config": None,
         "runs": [],
         "trends": {},
         "register": None,
+        "risk_coverage": None,
         "errors": [],
     }
 
@@ -94,6 +104,19 @@ def build_dashboard_data(
         except RiskRegisterError as exc:
             data["errors"].append(f"register: {exc}")
 
+    if coverage_path and Path(coverage_path).exists() and data["register"] is not None:
+        try:
+            register = load_register(register_path)
+            file_coverage = load_coverage(coverage_path)
+            results = analyze_risk_coverage(register, file_coverage)
+            payload = risk_coverage_to_dict(results)
+            payload["undercovered_high_risk"] = [
+                rc.risk.id for rc in undercovered(results, threshold=80)
+            ]
+            data["risk_coverage"] = payload
+        except (RiskRegisterError, CoverageError) as exc:
+            data["errors"].append(f"coverage: {exc}")
+
     return data
 
 
@@ -102,6 +125,7 @@ def create_server(
     history_path: str | None,
     register_path: str | None,
     port: int = 8765,
+    coverage_path: str | None = None,
 ) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # keep the terminal quiet
@@ -118,7 +142,9 @@ def create_server(
             if self.path == "/":
                 self._send(200, "text/html; charset=utf-8", DASHBOARD_HTML.encode("utf-8"))
             elif self.path == "/api/data":
-                payload = build_dashboard_data(config_path, history_path, register_path)
+                payload = build_dashboard_data(
+                    config_path, history_path, register_path, coverage_path
+                )
                 self._send(
                     200,
                     "application/json; charset=utf-8",
@@ -201,6 +227,9 @@ code { background: var(--bg); border: 1px solid var(--border); padding: 1px 6px;
 <div id="trends"><p class="muted">—</p></div>
 <h2>Risk register</h2>
 <div id="register"><p class="muted">no register loaded</p></div>
+<h2>Risk-weighted coverage</h2>
+<div id="riskcov"><p class="muted">no coverage report loaded — start with
+<code>aqef dashboard --coverage coverage.json --register risk-register.yaml</code></p></div>
 <script>
 const themeBtn = document.getElementById('theme-btn');
 function applyTheme(t){
@@ -289,6 +318,22 @@ async function refresh(){
             '</td><td>'+esc(x.owner||'—')+'</td></tr>';
     });
     document.getElementById('register').innerHTML = rh + '</table>';
+  }
+
+  if(d.risk_coverage){
+    let ch = '';
+    d.risk_coverage.undercovered_high_risk.forEach(id=>{
+      ch += '<div class="warnbox">'+esc(id)+' is high/critical with coverage below 80% — low coverage meets high risk</div>';
+    });
+    ch += '<table><tr><th>risk</th><th>tier</th><th>area coverage</th><th>gap score</th><th>files</th></tr>';
+    d.risk_coverage.risk_coverage.forEach(x=>{
+      const cov = x.unmatched ? pill('no files matched','neutral')
+        : fmt(x.coverage_pct)+'%' + (d.risk_coverage.undercovered_high_risk.includes(x.risk_id) ? ' '+pill('UNDER','FAIL') : '');
+      ch += '<tr><td>'+esc(x.risk_id)+'</td><td>'+pill(x.tier,'tier-'+x.tier)+'</td><td>'+cov+
+            '</td><td>'+fmt(x.gap_score)+'</td><td>'+x.files.length+'</td></tr>';
+    });
+    document.getElementById('riskcov').innerHTML = ch + '</table>'+
+      '<p class="muted">gap score = risk score × uncovered fraction — the top row is where low coverage meets high risk</p>';
   }
 }
 refresh();

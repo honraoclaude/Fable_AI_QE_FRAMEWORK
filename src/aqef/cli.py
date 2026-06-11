@@ -336,7 +336,10 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     from aqef.dashboard import create_server
 
     try:
-        server = create_server(args.config, args.history, args.register, port=args.port)
+        server = create_server(
+            args.config, args.history, args.register,
+            port=args.port, coverage_path=args.coverage,
+        )
     except OSError as exc:
         print(f"error: cannot bind port {args.port}: {exc}", file=sys.stderr)
         return 2
@@ -345,6 +348,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     print(f"  config:   {args.config or '—'}")
     print(f"  history:  {args.history}")
     print(f"  register: {args.register or '—'}")
+    print(f"  coverage: {args.coverage or '—'}")
     if args.open:
         webbrowser.open(url)
     try:
@@ -581,6 +585,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_dash.add_argument("--config", default="framework.yaml", help="framework config")
     p_dash.add_argument("--history", default=DEFAULT_HISTORY)
     p_dash.add_argument("--register", help="risk register YAML (optional)")
+    p_dash.add_argument(
+        "--coverage",
+        help="coverage report JSON for the risk-weighted coverage view (optional)",
+    )
     p_dash.add_argument("--port", type=int, default=8765)
     p_dash.add_argument("--open", action="store_true", help="open in the browser")
     p_dash.set_defaults(func=cmd_dashboard)
