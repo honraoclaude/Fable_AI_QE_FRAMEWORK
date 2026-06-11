@@ -30,6 +30,9 @@ implementation that turns the configuration into GO/NO-GO decisions.
 # Install (editable) — provides the `aqef` command
 pip install -e .
 
+# Scaffold a starter config + risk register in your own project
+aqef init --dir ../my-project
+
 # Validate the framework configuration
 aqef validate framework.yaml
 

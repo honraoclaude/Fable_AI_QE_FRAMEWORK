@@ -1,5 +1,6 @@
 """CI-friendly CLI for the framework.
 
+  python -m aqef init [--dir <path>] [--force]
   python -m aqef validate <framework.yaml>
   python -m aqef list-agents --config <framework.yaml>
   python -m aqef list-workflows --config <framework.yaml>
@@ -72,6 +73,19 @@ def _load(config_path: str):
     except ConfigError as exc:
         print(f"error: invalid configuration: {exc}", file=sys.stderr)
         raise SystemExit(2)
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    from aqef.scaffold import NEXT_STEPS, init_project
+
+    try:
+        created = init_project(args.dir, force=args.force)
+    except FileExistsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    created_list = "\n".join(f"  {p}" for p in created)
+    print(NEXT_STEPS.format(created=created_list))
+    return 0
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -399,6 +413,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="AI Agentic Quality Engineering Framework — gate and config tooling",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_init = sub.add_parser(
+        "init", help="scaffold a starter framework.yaml and risk-register.yaml"
+    )
+    p_init.add_argument("--dir", default=".", help="target directory (default: .)")
+    p_init.add_argument(
+        "--force", action="store_true", help="overwrite existing files"
+    )
+    p_init.set_defaults(func=cmd_init)
 
     p_validate = sub.add_parser("validate", help="validate a framework.yaml")
     p_validate.add_argument("config")
