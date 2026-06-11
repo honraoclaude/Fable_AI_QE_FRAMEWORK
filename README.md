@@ -97,7 +97,13 @@ Five layers, from machine-readable to human-judgment:
    Trends assess each metric against its rule's direction (coverage rising =
    improving; latency rising = worsening) and report verdict distribution over time.
    History records are immutable — past runs are evidence, never edited.
-5. **Human sections** — residual risk and the checkpoint decision are emitted as
+5. **Live dashboard** — `aqef dashboard --register risk-register.yaml --open` serves a
+   local page (stdlib only, no dependencies) with run history, verdict distribution,
+   per-gate metric trends, latest-run evidence, and the risk register with
+   unprotected-risk warnings. It re-reads your `.aqef/history.jsonl` on every refresh,
+   so `--store` runs appear live. Read-only by design: it renders evidence, never
+   mutates it.
+6. **Human sections** — residual risk and the checkpoint decision are emitted as
    explicit placeholders. The renderer never fabricates content a human is supposed
    to supply; that judgment is recorded by the human quality owner.
 

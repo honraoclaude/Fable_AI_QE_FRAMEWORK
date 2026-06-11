@@ -17,6 +17,8 @@
   python -m aqef decide <gate-or-workflow> --config <framework.yaml>
                      --metrics <metrics.json> [--format text|json]
                      [--baseline <metrics.json> | --baseline-from-history]
+  python -m aqef dashboard [--config <file>] [--history <file>]
+                     [--register <file>] [--port N] [--open]
   python -m aqef risks --register <risk-register.yaml>
   python -m aqef select-tests --register <risk-register.yaml>
                      [--changed <file> ...] [--changed-from <list-file>]
@@ -326,6 +328,32 @@ def cmd_decide(args: argparse.Namespace) -> int:
     return 0 if decision.recommendation == PROMOTE else 1
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    import webbrowser
+
+    from aqef.dashboard import create_server
+
+    try:
+        server = create_server(args.config, args.history, args.register, port=args.port)
+    except OSError as exc:
+        print(f"error: cannot bind port {args.port}: {exc}", file=sys.stderr)
+        return 2
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    print(f"AQEF dashboard: {url}  (Ctrl+C to stop)")
+    print(f"  config:   {args.config or '—'}")
+    print(f"  history:  {args.history}")
+    print(f"  register: {args.register or '—'}")
+    if args.open:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        server.server_close()
+    return 0
+
+
 def _load_register(path: str):
     try:
         return load_register(path)
@@ -502,6 +530,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"history file for --baseline-from-history (default: {DEFAULT_HISTORY})",
     )
     p_decide.set_defaults(func=cmd_decide)
+
+    p_dash = sub.add_parser(
+        "dashboard", help="serve a live local quality dashboard"
+    )
+    p_dash.add_argument("--config", default="framework.yaml", help="framework config")
+    p_dash.add_argument("--history", default=DEFAULT_HISTORY)
+    p_dash.add_argument("--register", help="risk register YAML (optional)")
+    p_dash.add_argument("--port", type=int, default=8765)
+    p_dash.add_argument("--open", action="store_true", help="open in the browser")
+    p_dash.set_defaults(func=cmd_dashboard)
 
     p_risks = sub.add_parser(
         "risks", help="validate and list a product risk register"

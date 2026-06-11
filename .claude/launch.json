@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "aqef-dashboard",
+      "runtimeExecutable": "aqef",
+      "runtimeArgs": ["dashboard", "--register", "examples/risk-register.yaml"],
+      "port": 8765
+    }
+  ]
+}
