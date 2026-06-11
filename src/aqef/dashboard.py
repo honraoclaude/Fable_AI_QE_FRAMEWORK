@@ -138,39 +138,57 @@ DASHBOARD_HTML = """<!doctype html>
 <title>AQEF dashboard</title>
 <style>
 :root { color-scheme: light dark;
-        --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; --muted:#57606a;
-        --border:#d0d7de; --bg:#f6f8fa; --info:#0969da;
-        --fg:#1f2328; --page:#ffffff; --warnbg:#fff1f0; }
+        --ok:#116329; --warn:#7d4e00; --bad:#a40e26; --muted:#3f4953;
+        --border:#b7c0c9; --bg:#eef1f4; --info:#0550ae;
+        --fg:#111418; --page:#ffffff; --warnbg:#fff1f0; --pillfg:#ffffff; }
+[data-theme="dark"] { --ok:#3fb950; --warn:#d29922; --bad:#ff7b72; --muted:#aab4bf;
+        --border:#444c56; --bg:#1c2128; --info:#58a6ff;
+        --fg:#f0f3f6; --page:#0d1117; --warnbg:#2d1516; --pillfg:#0d1117; }
 @media (prefers-color-scheme: dark) {
-  :root { --ok:#2ea043; --warn:#bb8009; --bad:#f85149; --muted:#9198a1;
-          --border:#30363d; --bg:#161b22; --info:#4493f8;
-          --fg:#e6edf3; --page:#0d1117; --warnbg:#2d1516; }
+  :root:not([data-theme="light"]) { --ok:#3fb950; --warn:#d29922; --bad:#ff7b72;
+        --muted:#aab4bf; --border:#444c56; --bg:#1c2128; --info:#58a6ff;
+        --fg:#f0f3f6; --page:#0d1117; --warnbg:#2d1516; --pillfg:#0d1117; }
 }
 body { font-family: system-ui, sans-serif; max-width: 1080px; margin: 1.5rem auto;
-       padding: 0 1rem; color: var(--fg); background: var(--page); }
-h1 { font-size: 1.5rem; } h2 { font-size: 1.1rem; margin-top: 2rem; }
-table { border-collapse: collapse; width: 100%; font-size: .85rem; }
-th, td { border: 1px solid var(--border); padding: .35rem .6rem; text-align: left; }
-th { background: var(--bg); }
-.pill { display: inline-block; padding: 1px 10px; border-radius: 10px; color: #fff;
-        font-size: .75rem; font-weight: 600; }
+       padding: 0 1rem 3rem; color: var(--fg); background: var(--page);
+       font-size: 16px; line-height: 1.55; }
+h1 { font-size: 1.8rem; margin: 0; }
+h2 { font-size: 1.3rem; margin: 2.2rem 0 .8rem; border-bottom: 2px solid var(--border);
+     padding-bottom: .35rem; }
+h3 { font-size: 1.05rem !important; margin: 1.4rem 0 .5rem; }
+.topbar { display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; flex-wrap: wrap; }
+#theme-btn { font-size: .9rem; padding: .4rem .9rem; border-radius: 6px; cursor: pointer;
+             border: 1px solid var(--border); background: var(--bg); color: var(--fg); }
+table { border-collapse: collapse; width: 100%; font-size: 1rem; }
+th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+th { background: var(--bg); font-weight: 600; }
+.pill { display: inline-block; padding: 2px 12px; border-radius: 12px;
+        color: var(--pillfg); font-size: .85rem; font-weight: 700;
+        letter-spacing: .02em; white-space: nowrap; }
 .PASS, .PROMOTE, .improving { background: var(--ok); }
 .WARN, .HOLD, .flat { background: var(--warn); }
 .FAIL, .ROLLBACK, .worsening { background: var(--bad); }
 .neutral { background: var(--muted); }
-.tier-critical { background: var(--bad); } .tier-high { background: #d4530b; }
+.tier-critical { background: var(--bad); } .tier-high { background: #e8590c; }
 .tier-medium { background: var(--warn); } .tier-low { background: var(--muted); }
-.muted { color: var(--muted); font-size: .8rem; }
-.warnbox { background: var(--warnbg); border: 1px solid var(--bad); color: var(--bad);
-           padding: .5rem .8rem; border-radius: 6px; margin: .5rem 0; font-size: .85rem; }
-.cards { display: flex; gap: 12px; flex-wrap: wrap; margin: .5rem 0 1rem; }
-.card { background: var(--bg); border-radius: 8px; padding: .7rem 1rem; min-width: 130px; }
-.card .n { font-size: 1.4rem; font-weight: 600; } .card .l { font-size: .75rem; color: var(--muted); }
-code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .8rem; }
+.muted { color: var(--muted); font-size: .95rem; }
+.warnbox { background: var(--warnbg); border: 1.5px solid var(--bad); color: var(--bad);
+           padding: .6rem .9rem; border-radius: 6px; margin: .5rem 0; font-size: 1rem;
+           font-weight: 500; }
+.cards { display: flex; gap: 14px; flex-wrap: wrap; margin: 1rem 0 1.25rem; }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+        padding: .8rem 1.2rem; min-width: 140px; }
+.card .n { font-size: 1.7rem; font-weight: 700; } .card .l { font-size: .9rem; color: var(--muted); }
+code { background: var(--bg); border: 1px solid var(--border); padding: 1px 6px;
+       border-radius: 4px; font-size: .9rem; }
 </style>
 </head>
 <body>
-<h1>AQEF quality dashboard</h1>
+<div class="topbar">
+  <h1>AQEF quality dashboard</h1>
+  <button id="theme-btn" type="button">theme: auto</button>
+</div>
 <p class="muted" id="meta">loading…</p>
 <div id="errors"></div>
 <div class="cards" id="summary"></div>
@@ -184,6 +202,21 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: .
 <h2>Risk register</h2>
 <div id="register"><p class="muted">no register loaded</p></div>
 <script>
+const themeBtn = document.getElementById('theme-btn');
+function applyTheme(t){
+  if(t==='auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  themeBtn.textContent = 'theme: '+t;
+  try { localStorage.setItem('aqef-theme', t); } catch(e) {}
+}
+let theme = 'auto';
+try { theme = localStorage.getItem('aqef-theme') || 'auto'; } catch(e) {}
+applyTheme(theme);
+themeBtn.addEventListener('click', ()=>{
+  theme = theme==='auto' ? 'light' : (theme==='light' ? 'dark' : 'auto');
+  applyTheme(theme);
+});
+
 function pill(text, cls){ return '<span class="pill '+cls+'">'+text+'</span>'; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 function fmt(n){ return (typeof n==='number') ? Math.round(n*100)/100 : n; }
@@ -231,7 +264,7 @@ async function refresh(){
     gateNames.forEach(g=>{
       const t = d.trends[g];
       const vd = Object.entries(t.verdicts).map(([v,c])=>c+'× '+v).join(', ');
-      th += '<h3 style="font-size:.95rem;">'+esc(g)+' <span class="muted">('+t.runs+' runs: '+vd+')</span></h3>';
+      th += '<h3>'+esc(g)+' <span class="muted">('+t.runs+' runs: '+vd+')</span></h3>';
       th += '<table><tr><th>metric</th><th>first</th><th>last</th><th>delta</th><th>assessment</th></tr>';
       Object.entries(t.metrics).forEach(([k,m])=>{
         const cls = m.assessment==='improving'?'improving':(m.assessment==='worsening'?'worsening':'neutral');
